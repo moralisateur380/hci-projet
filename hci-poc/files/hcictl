@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# hcictl - administration du cluster HCI (KVM + GlusterFS)
+set -euo pipefail
+
+CONF=/etc/hcictl.conf
+[ -f "$CONF" ] && . "$CONF"
+: "${NODES:?NODES manquant dans $CONF}"
+POOL=${POOL:-/var/lib/libvirt/images/hci}
+BASE_IMG=${BASE_IMG:-$POOL/base/noble-server-cloudimg-amd64.img}
+BRIDGE=${BRIDGE:-br0}
+SSH_USER=${SSH_USER:-hci}
+DISK_CACHE=${DISK_CACHE:-none}
+MIGRATE_OPTS=${MIGRATE_OPTS:-}
+VOL=${VOL:-vmstore}
+TPL=/etc/hcictl-user-data.tpl
+DISKS=$POOL/disks; SEEDS=$POOL/seeds; XMLS=$POOL/xml; PLACE=$POOL/placement; HA=$POOL/ha
+
+log() { printf '[hcictl] %s\n' "$*"; }
+die() { printf '[erreur] %s\n' "$*" >&2; exit 1; }
+
+uri() { echo "qemu+ssh://${SSH_USER}@$1/system?no_tty=1"; }
+v() { local n=$1; shift; virsh -c "$(uri "$n")" "$@"; }
+node_up() { ssh -o BatchMode=yes -o ConnectTimeout=3 "${SSH_USER}@$1" true >/dev/null 2>&1; }
+
+find_node() {
+  local n
+  for n in $NODES; do
+    node_up "$n" || continue
+    if v "$n" dominfo "$1" >/dev/null 2>&1; then echo "$n"; return 0; fi
+  done
+  return 1
+}
+
+pick_node() {
+  local exclude="${1:-}" best="" bestc=999 c n
+  for n in $NODES; do
+    [ "$n" = "$exclude" ] && continue
+    node_up "$n" || continue
+    c=$(v "$n" list --state-running --name | grep -c . || true)
+    if [ "$c" -lt "$bestc" ]; then best=$n; bestc=$c; fi
+  done
+  [ -n "$best" ] || die "aucun nÅ“ud disponible"
+  echo "$best"
+}
+
+cmd_status() {
+  log "NÅ“uds"
+  local n c
+  for n in $NODES; do
+    if node_up "$n"; then
+      c=$(v "$n" list --state-running --name | grep -c . || true)
+      printf '%-8s UP\tVM actives : %s\n' "$n" "$c"
+    else
+      printf '%-8s DOWN\n' "$n"
+    fi
+  done
+  log "Stockage GlusterFS"
+  sudo gluster volume info "$VOL" | grep -E 'Volume Name|Type|Status|Number of Bricks' || true
+  sudo gluster volume heal "$VOL" info summary 2>/dev/null | grep -E 'Brick|Number of entries:' || true
+}
+
+cmd_list() {
+  printf '%-8s %-20s %s\n' NÅ’UD VM Ã‰TAT
+  local n
+  for n in $NODES; do
+    if node_up "$n"; then
+      v "$n" list --all | awk -v n="$n" 'NR>2 && NF { printf "%-8s %-20s %s %s\n", n, $2, $3, $4 }'
+    else
+      printf '%-8s %-20s %s\n' "$n" - INJOIGNABLE
+    fi
+  done
+}
+
+cmd_create() {
+  local name=$1 ram=768 vcpu=1 disk=10 node="" ha=1
+  shift
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --ram)   ram=$2; shift 2;;
+      --vcpu)  vcpu=$2; shift 2;;
+      --disk)  disk=$2; shift 2;;
+      --node)  node=$2; shift 2;;
+      --no-ha) ha=0; shift;;
+      *) die "option inconnue : $1";;
+    esac
+  done
+  [ -f "$BASE_IMG" ] || die "image de base absente : $BASE_IMG (volume Gluster montÃ© ?)"
+  if find_node "$name" >/dev/null 2>&1; then die "la VM $name existe dÃ©jÃ "; fi
+  [ -n "$node" ] || node=$(pick_node)
+  node_up "$node" || die "$node injoignable"
+  mkdir -p "$DISKS" "$SEEDS" "$XMLS" "$PLACE" "$HA"
+
+  local tmp pub; tmp=$(mktemp -d)
+  pub=$(ssh-keygen -y -f "$HOME/.ssh/id_ed25519")
+  sed -e "s|__NAME__|$name|" -e "s|__PUBKEY__|$pub|" "$TPL" > "$tmp/user-data"
+  printf 'instance-id: %s\nlocal-hostname: %s\n' "$name" "$name" > "$tmp/meta-data"
+  cloud-localds "$SEEDS/$name-seed.iso" "$tmp/user-data" "$tmp/meta-data"
+  rm -rf "$tmp"
+
+  log "Disque de $name (${disk} Go) sur le volume rÃ©pliquÃ©"
+  qemu-img convert -O qcow2 "$BASE_IMG" "$DISKS/$name.qcow2"
+  qemu-img resize "$DISKS/$name.qcow2" "${disk}G" >/dev/null
+
+  log "CrÃ©ation de $name sur $node"
+  virt-install --connect "$(uri "$node")" --name "$name" --memory "$ram" --vcpus "$vcpu" \
+    --cpu host-model --os-variant ubuntu24.04 --import --noautoconsole --graphics none \
+    --disk "path=$DISKS/$name.qcow2,format=qcow2,bus=virtio,cache=$DISK_CACHE" \
+    --disk "path=$SEEDS/$name-seed.iso,device=cdrom" \
+    --network "bridge=$BRIDGE,model=virtio"
+
+  echo "$node" > "$PLACE/$name"
+  if [ "$ha" = 1 ]; then touch "$HA/$name"; fi
+  v "$node" dumpxml --inactive "$name" > "$XMLS/$name.xml"
+  log "OK : $name tourne sur $node. IP disponible dans ~1 min : hcictl ip $name"
+}
+
+cmd_start()   { local n; n=$(find_node "$1") || die "VM $1 introuvable"; v "$n" start "$1"; }
+cmd_stop()    { local n; n=$(find_node "$1") || die "VM $1 introuvable"; v "$n" shutdown "$1"; }
+cmd_console() { local n; n=$(find_node "$1") || die "VM $1 introuvable"; virsh -c "$(uri "$n")" console "$1"; }
+cmd_ip() {
+  local n; n=$(find_node "$1") || die "VM $1 introuvable"
+  v "$n" domifaddr "$1" --source agent 2>/dev/null || v "$n" domifaddr "$1" --source arp
+}
+
+cmd_delete() {
+  local name=$1 n=""
+  n=$(find_node "$name") || n=""
+  if [ -n "$n" ]; then
+    v "$n" destroy "$name" >/dev/null 2>&1 || true
+    v "$n" undefine "$name" --nvram >/dev/null 2>&1 || v "$n" undefine "$name" >/dev/null 2>&1 || true
+  fi
+  rm -f "$DISKS/$name.qcow2" "$SEEDS/$name-seed.iso" "$XMLS/$name.xml" "$PLACE/$name" "$HA/$name"
+  log "$name supprimÃ©e"
+}
+
+cmd_migrate() {
+  local name=$1 dst=$2 src state
+  node_up "$dst" || die "$dst injoignable"
+  src=$(find_node "$name") || die "VM $name introuvable"
+  [ "$src" != "$dst" ] || die "$name est dÃ©jÃ  sur $dst"
+  state=$(v "$src" domstate "$name")
+  if [ "$state" = running ]; then
+    log "Migration Ã  chaud de $name : $src -> $dst (les disques restent sur le volume partagÃ©)"
+    # shellcheck disable=SC2086
+    virsh -c "$(uri "$src")" migrate --live --persistent --undefinesource --verbose $MIGRATE_OPTS "$name" "$(uri "$dst")"
+  else
+    log "Migration Ã  froid de $name (VM arrÃªtÃ©e) : $src -> $dst"
+    v "$src" dumpxml --inactive "$name" > "$XMLS/$name.xml"
+    v "$dst" define "$XMLS/$name.xml"
+    v "$src" undefine "$name"
+  fi
+  echo "$dst" > "$PLACE/$name"
+  v "$dst" dumpxml --inactive "$name" > "$XMLS/$name.xml"
+}
+
+cmd_evacuate() {
+  local src=$1 name dst
+  for name in $(v "$src" list --name); do
+    dst=$(pick_node "$src")
+    cmd_migrate "$name" "$dst"
+  done
+}
+
+cmd_failover() {
+  local dead=$1 f name dst
+  if node_up "$dead"; then
+    die "$dead rÃ©pond encore : failover refusÃ© (risque de split-brain). Ã‰teignez-le d'abord."
+  fi
+  for f in "$PLACE"/*; do
+    [ -e "$f" ] || continue
+    name=$(basename "$f")
+    [ "$(cat "$f")" = "$dead" ] || continue
+    [ -e "$HA/$name" ] || { log "$name : pas de HA, ignorÃ©e"; continue; }
+    [ -f "$XMLS/$name.xml" ] || { log "$name : XML manquant"; continue; }
+    dst=$(pick_node "$dead")
+    log "Failover $name : $dead -> $dst"
+    v "$dst" define "$XMLS/$name.xml" >/dev/null
+    v "$dst" start "$name" || log "$name dÃ©jÃ  dÃ©marrÃ©e ?"
+    echo "$dst" > "$f"
+  done
+}
+
+usage() {
+  cat <<'EOF'
+hcictl - administration du cluster HCI
+  status                      Ã©tat des nÅ“uds et du stockage Gluster
+  list                        toutes les VM du cluster
+  create NOM [--ram Mo] [--vcpu N] [--disk Go] [--node NÅ’UD] [--no-ha]
+  start|stop|delete|console|ip NOM
+  migrate NOM NÅ’UD_DEST       migration Ã  chaud
+  evacuate NÅ’UD               vide un nÅ“ud (maintenance)
+  failover NÅ’UD_EN_PANNE      redÃ©marre ses VM HA sur un nÅ“ud sain
+EOF
+}
+
+cmd=${1:-help}; shift || true
+case $cmd in
+  status)   cmd_status;;
+  list)     cmd_list;;
+  create)   [ $# -ge 1 ] || die "nom de VM requis"; cmd_create "$@";;
+  start)    cmd_start "${1:?nom}";;
+  stop)     cmd_stop "${1:?nom}";;
+  console)  cmd_console "${1:?nom}";;
+  ip)       cmd_ip "${1:?nom}";;
+  delete)   cmd_delete "${1:?nom}";;
+  migrate)  cmd_migrate "${1:?nom}" "${2:?nÅ“ud destination}";;
+  evacuate) cmd_evacuate "${1:?nÅ“ud}";;
+  failover) cmd_failover "${1:?nÅ“ud}";;
+  *)        usage;;
+esac

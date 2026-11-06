@@ -1,2 +1,6 @@
-*.key 
-*.retry 
+hci-poc/files/hci_id_ed25519
+hci-poc/files/hci_id_ed25519.pub
+*.tar.gz
+*.key
+*.retry
+setup.ps1

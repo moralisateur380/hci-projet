@@ -1,0 +1,17 @@
+ansible_user: hci
+
+# Noms d'interfaces (verifier avec ip -br a)
+if_priv: ens19      # reseau prive du cluster 10.10.10.0/24 (vmbr1)
+if_uplink: ens18    # ESGI LAB 192.168.20.x, DHCP : Internet (vmbr0)
+if_vm: ens20        # reseau des VM invitees (vmbr2), membre de br0
+
+brick_dev: /dev/sdb
+brick_mount: /data/brick1
+gluster_volume: vmstore
+pool_path: /var/lib/libvirt/images/hci
+base_image_url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+
+cluster:
+  hci1: {priv: 10.10.10.11, vm: 192.168.100.11}
+  hci2: {priv: 10.10.10.12, vm: 192.168.100.12}
+  hci3: {priv: 10.10.10.13, vm: 192.168.100.13}

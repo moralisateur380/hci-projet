@@ -1,0 +1,6 @@
+NODES="{{ groups['hci'] | join(' ') }}"
+POOL="{{ pool_path }}"
+BASE_IMG="{{ pool_path }}/base/noble-server-cloudimg-amd64.img"
+BRIDGE="br0"
+SSH_USER="hci"
+DISK_CACHE="none"

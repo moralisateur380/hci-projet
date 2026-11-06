@@ -1,0 +1,20 @@
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    {{ if_priv }}:
+      dhcp4: false
+      addresses: [{{ cluster[inventory_hostname].priv }}/24]
+    {{ if_uplink }}:
+      dhcp4: true
+      dhcp6: false
+      optional: true
+    {{ if_vm }}:
+      dhcp4: false
+  bridges:
+    br0:
+      interfaces: [{{ if_vm }}]
+      addresses: [{{ cluster[inventory_hostname].vm }}/24]
+      parameters:
+        stp: false
+        forward-delay: 0
