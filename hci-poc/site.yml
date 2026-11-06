@@ -1,15 +1,15 @@
 ---
-# ============ PLAY 1 : socle commun, reseau, KVM ============
-- name: Socle commun, rÃ©seau et KVM
+# ============ PLAY 1 : socle commun, réseau, KVM ============
+- name: Socle commun, réseau et KVM
   hosts: hci
   become: true
   tags: [base]
   tasks:
-    - name: Nom d'hÃ´te
+    - name: Nom d'hôte
       ansible.builtin.hostname:
         name: "{{ inventory_hostname }}"
 
-    - name: RÃ©solution de noms du cluster
+    - name: Résolution de noms du cluster
       ansible.builtin.blockinfile:
         path: /etc/hosts
         marker: "# {mark} HCI CLUSTER"
@@ -56,7 +56,7 @@
         group: hci
         mode: "0700"
 
-    - name: ClÃ© privÃ©e de cluster
+    - name: Clé privée de cluster
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/files/hci_id_ed25519"
         dest: /home/hci/.ssh/id_ed25519
@@ -64,7 +64,7 @@
         group: hci
         mode: "0600"
 
-    - name: ClÃ© publique de cluster autorisÃ©e
+    - name: Clé publique de cluster autorisée
       ansible.posix.authorized_key:
         user: hci
         key: "{{ lookup('file', playbook_dir + '/files/hci_id_ed25519.pub') }}"
@@ -79,12 +79,12 @@
         group: hci
         mode: "0600"
 
-    - name: VÃ©rifier que /dev/kvm existe
+    - name: Vérifier que /dev/kvm existe
       ansible.builtin.stat:
         path: /dev/kvm
       register: kvm_dev
 
-    - name: ArrÃªt si la virtualisation imbriquÃ©e est absente
+    - name: Arrêt si la virtualisation imbriquée est absente
       ansible.builtin.assert:
         that: kvm_dev.stat.exists
         fail_msg: "/dev/kvm absent : nested non actif sur pve ou CPU de la VM pas en host"
@@ -95,7 +95,7 @@
         enabled: true
         state: started
 
-    - name: EmpÃªcher cloud-init de rÃ©Ã©crire le rÃ©seau
+    - name: Empêcher cloud-init de réécrire le réseau
       ansible.builtin.copy:
         dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
         content: "network: {config: disabled}\n"
@@ -110,33 +110,33 @@
       args:
         creates: /etc/netplan/60-hci.yaml
 
-    - name: DÃ©ployer la configuration netplan (bridge br0)
+    - name: Déployer la configuration netplan (bridge br0)
       ansible.builtin.template:
         src: templates/netplan.yaml.j2
         dest: /etc/netplan/60-hci.yaml
         mode: "0600"
       register: netplan_cfg
 
-    - name: Appliquer netplan (dÃ©tachÃ©)
+    - name: Appliquer netplan (détaché)
       ansible.builtin.shell: netplan generate && sleep 2 && netplan apply
       async: 45
       poll: 0
       when: netplan_cfg.changed
 
-    - name: Attendre le retour du nÅ“ud
+    - name: Attendre le retour du nœud
       ansible.builtin.wait_for_connection:
         delay: 8
         timeout: 90
       when: netplan_cfg.changed
 
-    - name: VÃ©rifier que br0 est actif
+    - name: Vérifier que br0 est actif
       ansible.builtin.command: ip -br addr show br0
       register: br0
       changed_when: false
       failed_when: cluster[inventory_hostname].vm not in br0.stdout
 
 # ============ PLAY 2 : briques Gluster ============
-- name: PrÃ©parer la brique de stockage
+- name: Préparer la brique de stockage
   hosts: hci
   become: true
   tags: [gluster]
@@ -171,7 +171,7 @@
         state: directory
 
 # ============ PLAY 3 : cluster Gluster et volume (depuis hci1) ============
-- name: CrÃ©er le cluster et le volume rÃ©pliquÃ©
+- name: Créer le cluster et le volume répliqué
   hosts: hci1
   become: true
   tags: [gluster]
@@ -182,7 +182,7 @@
       loop: [hci2-st, hci3-st]
       changed_when: false
 
-    - name: Attendre que les 2 pairs soient connectÃ©s
+    - name: Attendre que les 2 pairs soient connectés
       ansible.builtin.shell: gluster peer status | grep -c 'Peer in Cluster (Connected)'
       register: peers
       until: peers.stdout | int == 2
@@ -191,7 +191,7 @@
       changed_when: false
       failed_when: false
 
-    - name: CrÃ©er le volume replica 3 (si absent)
+    - name: Créer le volume replica 3 (si absent)
       ansible.builtin.shell: |
         gluster volume info {{ gluster_volume }} >/dev/null 2>&1 || \
         gluster volume create {{ gluster_volume }} replica 3 \
@@ -200,7 +200,7 @@
           hci3-st:{{ brick_mount }}/{{ gluster_volume }} force
       changed_when: false
 
-    - name: DÃ©marrer le volume (si pas dÃ©jÃ  dÃ©marrÃ©)
+    - name: Démarrer le volume (si pas déjà démarré)
       ansible.builtin.shell: |
         gluster volume info {{ gluster_volume }} | grep -q 'Status: Started' || \
         gluster volume start {{ gluster_volume }}
@@ -210,7 +210,7 @@
       ansible.builtin.command: gluster volume set {{ gluster_volume }} group virt
       changed_when: false
 
-- name: hci1 doit Ãªtre connu par son nom depuis hci2
+- name: hci1 doit être connu par son nom depuis hci2
   hosts: hci2
   become: true
   tags: [gluster]
@@ -220,12 +220,12 @@
       changed_when: false
 
 # ============ PLAY 4 : montage, image de base, hcictl ============
-- name: Monter le volume, prÃ©parer l'image et installer hcictl
+- name: Monter le volume, préparer l'image et installer hcictl
   hosts: hci
   become: true
   tags: [pool]
   tasks:
-    - name: Monter le volume distribuÃ© dans le dossier d'images libvirt
+    - name: Monter le volume distribué dans le dossier d'images libvirt
       ansible.posix.mount:
         path: "{{ pool_path }}"
         src: "{{ inventory_hostname }}-st:/{{ gluster_volume }}"
@@ -233,7 +233,7 @@
         opts: "defaults,_netdev,backup-volfile-servers={{ groups['hci'] | difference([inventory_hostname]) | map('regex_replace', '$', '-st') | join(':') }}"
         state: mounted
 
-    - name: Droits et sous-dossiers (volume partagÃ©, une seule fois)
+    - name: Droits et sous-dossiers (volume partagé, une seule fois)
       ansible.builtin.file:
         path: "{{ pool_path }}/{{ item }}"
         state: directory
@@ -243,7 +243,7 @@
       loop: ["", base, disks, seeds, xml, placement, ha]
       run_once: true
 
-    - name: Image cloud Ubuntu 24.04 vÃ©rifiÃ©e par SHA256
+    - name: Image cloud Ubuntu 24.04 vérifiée par SHA256
       ansible.builtin.get_url:
         url: "{{ base_image_url }}"
         dest: "{{ pool_path }}/base/noble-server-cloudimg-amd64.img"

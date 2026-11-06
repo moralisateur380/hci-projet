@@ -1,9 +1,9 @@
 ansible_user: hci
 
-# Noms d'interfaces (verifier avec ip -br a)
-if_priv: ens19      # reseau prive du cluster 10.10.10.0/24 (vmbr1)
+# Noms d'interfaces (vérifier avec ip -br a)
+if_priv: ens19      # réseau privé du cluster 10.10.10.0/24 (vmbr1)
 if_uplink: ens18    # ESGI LAB 192.168.20.x, DHCP : Internet (vmbr0)
-if_vm: ens20        # reseau des VM invitees (vmbr2), membre de br0
+if_vm: ens20        # réseau des VM invitées (vmbr2), membre de br0
 
 brick_dev: /dev/sdb
 brick_mount: /data/brick1

@@ -2,7 +2,7 @@
 
 ```mermaid
 flowchart TB
-  PC["PC portable"] -->|"mÃªme rÃ©seau ou Twingate"| PVE
+  PC["PC portable"] -->|"même réseau ou Twingate"| PVE
   subgraph PVE["pve : Proxmox VE (192.168.20.206)"]
     direction TB
     H1["hci1 (VM 100)"]
@@ -15,22 +15,22 @@ flowchart TB
   H3 --- G
 ```
 
-## RÃ©seaux
+## Réseaux
 
-| Pont Proxmox | RÃ©seau | RÃ´le |
+| Pont Proxmox | Réseau | Rôle |
 |---|---|---|
-| vmbr0 | 192.168.20.0/24 (ESGI LAB) | Internet, accÃ¨s SSH et interface web de pve |
-| vmbr1 | 10.10.10.0/24 (privÃ©, isolÃ©) | Cluster : SSH, Ansible, Gluster, migration |
-| vmbr2 | 192.168.100.0/24 (NAT + DHCP) | VM invitÃ©es, vues par les nÅ“uds via br0 |
+| vmbr0 | 192.168.20.0/24 (ESGI LAB) | Internet, accès SSH et interface web de pve |
+| vmbr1 | 10.10.10.0/24 (privé, isolé) | Cluster : SSH, Ansible, Gluster, migration |
+| vmbr2 | 192.168.100.0/24 (NAT + DHCP) | VM invitées, vues par les nœuds via br0 |
 
 ## Briques
 
-| Brique | Choix | RÃ´le |
+| Brique | Choix | Rôle |
 |---|---|---|
-| OS | Ubuntu Server 24.04 LTS | Base des 3 nÅ“uds |
-| Hyperviseur | KVM/QEMU + libvirt | ExÃ©cution des VM |
-| Stockage distribuÃ© | GlusterFS, volume vmstore replica 3 | Disques des VM copiÃ©s sur 3 nÅ“uds |
-| DÃ©ploiement | Ansible | Cluster reproductible depuis hci1 |
-| Management | hcictl (bash) | CrÃ©ation, migration, Ã©vacuation, failover |
-| RÃ©seau | Bridge br0 (netplan) | RÃ©seau des VM invitÃ©es |
-| AccÃ¨s Ã  distance | Twingate | Travail hors du labo |
+| OS | Ubuntu Server 24.04 LTS | Base des 3 nœuds |
+| Hyperviseur | KVM/QEMU + libvirt | Exécution des VM |
+| Stockage distribué | GlusterFS, volume vmstore replica 3 | Disques des VM copiés sur 3 nœuds |
+| Déploiement | Ansible | Cluster reproductible depuis hci1 |
+| Management | hcictl (bash) | Création, migration, évacuation, failover |
+| Réseau | Bridge br0 (netplan) | Réseau des VM invitées |
+| Accès à distance | Twingate | Travail hors du labo |

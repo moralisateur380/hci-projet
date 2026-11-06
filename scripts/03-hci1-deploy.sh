@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A lancer sur hci1 en tant que hci. Premier passage : mot de passe ; relances : clÃ© de cluster.
+# À lancer sur hci1 en tant que hci. Premier passage : mot de passe ; relances : clé de cluster.
 set -euo pipefail
 cd ~/hci-poc
 PW='azerty1234'

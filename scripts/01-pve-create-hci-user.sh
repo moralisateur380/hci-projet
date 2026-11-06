@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A lancer sur pve (root). CrÃ©e l'utilisateur hci s'il n'existe pas et force son mot de passe.
+# À lancer sur pve (root). Crée l'utilisateur hci s'il n'existe pas et force son mot de passe.
 apt install -y sshpass
 for ip in 10.10.10.11 10.10.10.12 10.10.10.13; do
   sshpass -p azerty1234 ssh -o StrictHostKeyChecking=accept-new ubuntu@$ip \
