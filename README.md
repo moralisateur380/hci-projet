@@ -1,4 +1,4 @@
-# VIRT-07 - Micro-projet HCI (groupe 11)
+# VIRT-07 - projet HCI (groupe 11)
 
 Gautier Fouteret, Victor Tassart, Jacques-d'Evaldo Tobossou
 
